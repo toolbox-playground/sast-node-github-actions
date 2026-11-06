@@ -68,18 +68,32 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: pip install semgrep==1.184.0
+      # RUN #1 (configuração de tutorial): só p/javascript + p/secrets.
+      #   Resultado: 1 de 3 achados e o gate em ERROR saiu com 0 — job verde.
+      # RUN #2 (esta versão): p/javascript sozinho não traz as regras de Express
+      #   nem as de child_process. Elas entram explicitamente.
       - name: Scan
         run: |
-          semgrep scan --config p/javascript --config p/secrets --metrics=off \
+          semgrep scan --metrics=off \
+            --config p/javascript \
+            --config r/javascript.express.security \
+            --config r/javascript.lang.security \
             --sarif --output semgrep.sarif app/
       - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         if: always()
         with:
           sarif_file: sast-node-github-actions/semgrep.sarif
           category: semgrep
-      # Gate: falha só em severidade ERROR
+      # Gate: falha só em severidade ERROR.
+      # Bloqueia SQL injection e command injection. O segredo do JWT é WARNING e PASSA.
+      # Para bloquear também o segredo (e o alerta de CSRF): --severity WARNING
       - name: Gate
-        run: semgrep scan --config p/javascript --config p/secrets --metrics=off --severity ERROR --error app/
+        run: |
+          semgrep scan --metrics=off \
+            --config p/javascript \
+            --config r/javascript.express.security \
+            --config r/javascript.lang.security \
+            --severity ERROR --error app/
 
   codeql:
     name: CodeQL
