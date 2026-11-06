@@ -1,0 +1,102 @@
+# SAST no GitHub Actions — demo do vídeo TBX Tech
+# Três ferramentas contra o mesmo código, em paralelo:
+#   - ESLint + eslint-plugin-security (linter)
+#   - Semgrep Community Edition (SAST open source)
+#   - CodeQL (gratuito em repositório público, mas NÃO é open source)
+# Todas enviam SARIF para a aba Security → Code scanning.
+#
+# Actions fixadas por SHA (tag mutável = risco de supply chain, ver tj-actions/CVE-2025-30066).
+
+name: sast-node-github-actions
+
+on:
+  pull_request:
+    paths:
+      - 'sast-node-github-actions/**'
+      - '.github/workflows/sast-node-github-actions.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'sast-node-github-actions/**'
+      - '.github/workflows/sast-node-github-actions.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: sast-node-github-actions
+
+jobs:
+  eslint:
+    name: ESLint (plugin security)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sast-node-github-actions/package-lock.json
+      - run: npm ci
+      # Relatório para a aba Security (não falha aqui; o gate vem no passo seguinte)
+      - run: npx eslint app/ --format @microsoft/eslint-formatter-sarif --output-file eslint.sarif || true
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        if: always()
+        with:
+          sarif_file: sast-node-github-actions/eslint.sarif
+          category: eslint
+      # Gate: por padrão as regras do plugin são "warning" e o ESLint sai com 0.
+      # Sem --max-warnings 0 o pipeline fica verde mesmo com achado.
+      - name: Gate
+        run: npx eslint app/ --max-warnings 0
+
+  semgrep:
+    name: Semgrep CE
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: pip install semgrep==1.184.0
+      - name: Scan
+        run: |
+          semgrep scan --config p/javascript --config p/secrets --metrics=off \
+            --sarif --output semgrep.sarif app/
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        if: always()
+        with:
+          sarif_file: sast-node-github-actions/semgrep.sarif
+          category: semgrep
+      # Gate: falha só em severidade ERROR
+      - name: Gate
+        run: semgrep scan --config p/javascript --config p/secrets --metrics=off --severity ERROR --error app/
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          languages: javascript-typescript
+          config: |
+            paths:
+              - sast-node-github-actions/app
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          category: codeql
+      # O CodeQL não falha o job sozinho. O gate dele é uma regra de proteção
+      # (ruleset → "Require code scanning results"), configurada no repositório.

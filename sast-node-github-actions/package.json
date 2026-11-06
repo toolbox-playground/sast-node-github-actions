@@ -1,0 +1,20 @@
+{
+  "name": "sast-node-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App Node com vulnerabilidades plantadas para o vídeo de SAST da TBX Tech",
+  "main": "app/server.js",
+  "scripts": {
+    "start": "node app/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@microsoft/eslint-formatter-sarif": "^3.1.0",
+    "eslint": "^10.14.0",
+    "eslint-plugin-security": "^4.2.1"
+  }
+}
